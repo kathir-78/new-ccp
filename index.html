@@ -1,12 +1,21 @@
 <!DOCTYPE html>
 <html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Headless Amazon Connect CCP</title>
+</head>
 <body>
+  <!-- CCP container (hidden) -->
   <div id="ccp" style="display:none"></div>
 
   <script src="https://unpkg.com/amazon-connect-streams@1.7.8/release/connect-streams-min.js"></script>
+
   <script>
     const CCP_URL = "https://p3-sample.my.connect.aws/ccp-v2/";
     const REGION = "us-east-1";
+
+    let activeContact = null;
+    let agent = null;
 
     connect.core.initCCP(document.getElementById("ccp"), {
       ccpUrl: CCP_URL,
@@ -16,40 +25,46 @@
       softphone: { allowFramedSoftphone: true }
     });
 
-    connect.contact(contact => {
-      const contactId = contact.getContactId();
-
-      contact.onIncoming(() => emit({
-        type: "CALL_STATE",
-        status: "RINGING",
-        phone: getPhone(contact),
-        contactId
-      }));
-
-      contact.onConnected(() => emit({
-        type: "CALL_STATE",
-        status: "CONNECTED",
-        phone: getPhone(contact),
-        contactId
-      }));
-
-      contact.onEnded(() => emit({
-        type: "CALL_STATE",
-        status: "IDLE",
-        contactId
-      }));
+    connect.agent(a => {
+      agent = a;
+      console.log("Agent logged in:", agent.getName());
     });
 
-    function emit(data) {
-      console.log("📤 CCP emitting:", data);
-      window.opener?.postMessage(data, "*");
+    connect.contact(contact => {
+      activeContact = contact;
+      const contactId = contact.getContactId();
+
+      contact.onIncoming(() => emit("RINGING", contact));
+      contact.onConnected(() => emit("CONNECTED", contact));
+      contact.onEnded(() => emit("ENDED", contact));
+    });
+
+    // SEND EVENTS TO EXTENSION 
+    function emit(status, contact) {
+      const phone =
+        contact.getActiveInitialConnection()
+          ?.getEndpoint()?.phoneNumber || "";
+
+      window.opener?.postMessage({
+        type: "CALL_EVENT",
+        status,
+        contactId: contact.getContactId(),
+        phone
+      }, "*");
     }
 
-    function getPhone(contact) {
-      return contact.getActiveInitialConnection()
-        ?.getEndpoint()
-        ?.phoneNumber || "";
-    }
+    // RECEIVE ACTIONS FROM EXTENSION 
+    window.addEventListener("message", e => {
+      if (!activeContact || !agent) return;
+
+      const conn = activeContact.getAgentConnection();
+      if (!conn) return;
+
+      if (e.data?.action === "ANSWER") conn.accept();
+      if (e.data?.action === "HANGUP") conn.destroy();
+      if (e.data?.action === "MUTE") agent.mute();
+      if (e.data?.action === "UNMUTE") agent.unmute();
+    });
   </script>
 </body>
 </html>
