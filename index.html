@@ -3,48 +3,54 @@
 <head>
   <meta charset="UTF-8" />
   <title>Amazon Connect CCP</title>
+  <style>
+    html, body, #ccp {
+      margin: 0;
+      height: 100%;
+      width: 100%;
+    }
+  </style>
 </head>
 <body>
 
-  <!-- Native CCP UI -->
-  <div id="ccp" style="height:100vh;"></div>
+<div id="ccp"></div>
 
-  <script src="https://unpkg.com/amazon-connect-streams@1.7.8/release/connect-streams-min.js"></script>
+<script src="https://unpkg.com/amazon-connect-streams@1.7.8/release/connect-streams-min.js"></script>
 
-  <script>
-    const CCP_URL = "https://p3-sample.my.connect.aws/ccp-v2/";
-    const REGION = "us-east-1";
+<script>
+  const CCP_URL = "https://p3-sample.my.connect.aws/ccp-v2/";
+  const REGION = "us-east-1";
 
-    connect.core.initCCP(document.getElementById("ccp"), {
-      ccpUrl: CCP_URL,
-      region: REGION,
-      loginPopup: true,
-      loginPopupAutoClose: true,
-      softphone: { allowFramedSoftphone: true }
-    });
+  connect.core.initCCP(document.getElementById("ccp"), {
+    ccpUrl: CCP_URL,
+    region: REGION,
+    loginPopup: true,
+    loginPopupAutoClose: true,
+    softphone: { allowFramedSoftphone: true }
+  });
 
-    // Emit call events outward
-    connect.contact(contact => {
-      const contactId = contact.getContactId();
+  // Agent can set Available / Offline normally
+  connect.agent(agent => {
+    console.log("Agent logged in:", agent.getName());
+  });
 
-      contact.onIncoming(() => emit("RINGING", contact));
-      contact.onConnected(() => emit("CONNECTED", contact));
-      contact.onEnded(() => emit("ENDED", contact));
-    });
+  // 🔑 THIS IS THE IMPORTANT PART
+  connect.contact(contact => {
+    const contactId = contact.getContactId();
 
-    function emit(status, contact) {
+    contact.onIncoming(() => {
       const phone =
         contact.getActiveInitialConnection()
           ?.getEndpoint()?.phoneNumber || "";
 
       window.opener?.postMessage({
         type: "CALL_EVENT",
-        status,
         phone,
-        contactId: contact.getContactId()
+        contactId
       }, "*");
-    }
-  </script>
+    });
+  });
+</script>
 
 </body>
 </html>
